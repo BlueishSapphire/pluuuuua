@@ -264,7 +264,7 @@ class LuaPyFunction(LuaObject):
 	def __init__(self, func: callable):
 		self.func = func
 
-	def call(self, env, args, pause: bool = True, debug: bool = True):
+	def call(self, env, args):
 		res = self.func(*args)
 		if isinstance(res, tuple):
 			return tuple(make_lua_type(r) for r in res)
