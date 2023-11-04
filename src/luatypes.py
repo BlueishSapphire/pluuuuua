@@ -24,8 +24,8 @@ class LuaObject:
 	name: str = "object"
 	value: any = None
 
-	def tostring(self) -> any: return LuaNil()
-	def tonumber(self) -> any: return LuaNil()
+	def tostring(self): return f"{self.name}: 0x{id(self):x}"
+	def tonumber(self): return LuaNil()
 
 	def call(self):
 		raise LuaError(f"attempt to call a {self.name} value")
@@ -68,6 +68,9 @@ class LuaObject:
 	def op_not(self) -> any:
 		return LuaBoolean(False)
 
+	def __str__(self): return f"{self.name}: 0x{id(self):x}"
+	def __repr__(self): return type(self).__name__ + f"({self.value})"
+
 
 class LuaNil(LuaObject):
 	name = "nil"
@@ -86,10 +89,19 @@ class LuaNil(LuaObject):
 class LuaNumber(LuaObject):
 	name = "number"
 
-	def __init__(self, value: int | float): self.value = float(value)
+	def __init__(self, value: int | float):
+		if isinstance(value, type(self)):
+			self.value = value.value
+		self.value = float(value)
 
-	def tostring(self): return LuaString(str(self.value))
-	def tonumber(self): return self
+	def tostring(self):
+		if self.value.is_integer():
+			return LuaString(str(int(self.value)))
+		else:
+			return LuaString(str(self.value))
+
+	def tonumber(self):
+		return LuaNumber(self.value)
 
 	def __str__(self): return str(self.value)
 	def __repr__(self): return f"LuaNumber({self.value})"
@@ -98,10 +110,13 @@ class LuaNumber(LuaObject):
 class LuaString(LuaObject):
 	name = "string"
 
-	def __init__(self, value: str): self.value = str(value)
+	def __init__(self, value: str):
+		if isinstance(value, type(self)):
+			self.value = value.value
+		self.value = str(value)
 
-	def tostring(self): return self
-	def tonumber(self): return LuaNumber(str(self.value))
+	def tostring(self): return LuaString(self.value)
+	def tonumber(self): return LuaNumber(float(self.value))
 
 	def __str__(self): return self.value
 	def __repr__(self): return f"LuaString({self.value})"
@@ -110,10 +125,13 @@ class LuaString(LuaObject):
 class LuaBoolean(LuaObject):
 	name = "boolean"
 
-	def __init__(self, value: bool): self.value = bool(value)
+	def __init__(self, value: bool):
+		if isinstance(value, type(self)):
+			self.value = value.value
+		self.value = bool(value)
 
 	def tostring(self): return "true" if self.value else "false"
-	def tonumber(self): return LuaNil
+	def tonumber(self): return LuaNil()
 
 	def __str__(self): return "true" if self.value else "false"
 	def __repr__(self): return f"LuaBoolean({self.value})"
@@ -126,20 +144,19 @@ class LuaTable(LuaObject):
 		self.arr_size = arr_size
 		self.hash_size = hash_size
 
-		self.arr = [LuaNil] * arr_size
+		self.arr = [LuaNil()] * arr_size
 		self.hash = {}
 
-	def tostring(self): return f"table: 0x{id(self):X}"
-	def tonumber(self): return LuaNil()
-
-	def get_from(self, key: str): return self.hash.get(key, LuaNil)
+	def get_from(self, key: str):
+		if isinstance(key, LuaNumber):
+			key = key.value
+		if isinstance(key, LuaString):
+			key = key.value
+		return self.hash.get(key, LuaNil())
 	def set_hash(self, key: str, val: any): self.hash.update({key: val})
 	def set_arr(self, idx: int, val: any): self.arr[idx - 1] = val
 
 	def op_len(self): return len(self.arr) # TODO
-
-	def __str__(self): return f"table: 0x{id(self):X}"
-	def __repr__(self): return f"LuaTable({self.value})"
 
 
 class LuaFunction(LuaObject):
@@ -205,14 +222,8 @@ class LuaFunction(LuaObject):
 	def get_upval(self, idx: int) -> LuaObject:
 		return self.upvals[idx]
 
-	def tostring(self): return f"function: 0x{id(self):X}"
-	def tonumber(self): return LuaNil()
-
 	def call(self, env, args):
 		return call_lua_function(self, env, args)
-
-	def __str__(self): return f"function: 0x{id(self):X}"
-	def __repr__(self): return f"LuaFunction({self.value})"
 
 	def get_debug_str(self):
 		res = f".function  {self.num_upvals} {self.num_params} x {self.max_stack_size}\n"
@@ -248,17 +259,16 @@ class LuaFunction(LuaObject):
 
 
 class LuaPyFunction(LuaObject):
-	name = "py function"
+	name = "function"
 
 	def __init__(self, func: callable):
 		self.func = func
 
-	def call(self, env, upvals, args):
+	def call(self, env, args, pause: bool = True, debug: bool = True):
 		res = self.func(*args)
-		return make_lua_type(res)
-
-	def __str__(self): return self.func.__name__
-	def __repr__(self): return f"LuaPyFunction({self.func.__name__})"
+		if isinstance(res, tuple):
+			return tuple(make_lua_type(r) for r in res)
+		return (make_lua_type(res),)
 
 
 NO_LENGTH = [LuaObject, LuaNil, LuaBoolean, LuaNumber, LuaFunction, LuaPyFunction]
@@ -268,23 +278,21 @@ NO_MATHOPS = [LuaBoolean, LuaString]
 
 def make_lua_type(val: any) -> tuple[LuaObject]:
 	match val:
-		case LuaObject(): return (val,)
-		case None: return (LuaNil(),)
-		case int(): return (LuaNumber(val),)
-		case float(): return (LuaNumber(val),)
-		case str(): return (LuaString(val),)
+		case LuaObject(): return val
+		case None: return LuaNil()
+		case int(): return LuaNumber(val)
+		case float(): return LuaNumber(val)
+		case str(): return LuaString(val)
 		case dict():
 			t = LuaTable(0, len(val))
 			for k, v in val.items():
 				t.set_hash(k, make_lua_type(v))
-			return (t,)
+			return t
 		case list():
 			t = LuaTable(len(val), 0)
 			for i, v in enumerate(val):
 				t.set_arr(i + 1, make_lua_type(v))
-			return (t,)
-		case tuple():
-			return tuple(make_lua_type(v) for v in val)
+			return t
 		case _:
 			raise Exception("unrecognised type: " + str(type(val)))
 
@@ -309,18 +317,19 @@ class LuaStack:
 		self.pool.update({idx: self[idx]})
 		return LuaUpvalue(self, idx)
 
-	def get_upval(self, idx: int):
+	def get_upval(self, idx: int) -> LuaObject:
 		return self.pool[idx]
 
 	def set_upval(self, idx: int, val: LuaObject):
-		# assert isinstance(val, LuaObject), "tried to set a non-lua value to an upvalue"
+		assert isinstance(val, LuaObject), "tried to set a non-lua value to an upvalue"
 		self.pool[idx] = val
 
 	def close_upval(self, idx: int):
-		del self.pool[idx]
+		self.registers.pop(idx)
+		self.registers.append(None)
 
 
-class LuaUpvalue:
+class LuaUpvalue(LuaObject):
 	def __init__(self, parent: LuaStack, idx: int):
 		self.parent = parent
 		self.idx = idx
@@ -348,7 +357,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 		inst = lua_func.instructs[pc]
 		A, B, C, Bx, sBx = inst.A, inst.B, inst.C, inst.Bx, inst.sBx
 
-		input(f"{lua_func.proto_num}:[{pc + 1}] {inst.name}")
+		# input(f"{lua_func.proto_num}:[{pc + 1}] {inst.name}")
 
 		match inst.opcode:
 			case 0x00: # move
@@ -356,7 +365,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 			case 0x01: # loadk
 				stack[A] = const[Bx]
 			case 0x02: # loadbool
-				stack[A] = LuaBoolean(stack[B])
+				stack[A] = LuaBoolean(B)
 				if bool(C):
 					pc += 1
 			case 0x03: # loadnil
@@ -367,7 +376,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 			case 0x05: # getglobal
 				stack[A] = env.get(const[Bx])
 			case 0x06: # gettable
-				stack[A] = stack[B].get(stack_or_const(C))
+				stack[A] = stack[B].get_from(stack_or_const(C))
 			case 0x07: # setglobal
 				env.set(const[Bx], stack[A])
 			case 0x08: # setupval
@@ -378,7 +387,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				stack[A] = LuaTable(decode_fbyte(B), decode_fbyte(C))
 			case 0x0B: # self
 				stack[A + 1] = stack[B]
-				stack[A] = stack[B].get(stack_or_const(C))
+				stack[A] = stack[B].get_from(stack_or_const(C))
 			case 0x0C: # add
 				stack[A] = stack_or_const(B).op_add(stack_or_const(C))
 			case 0x0D: # sub
@@ -427,7 +436,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 					res = stack[A].call(env, stack[A + 1:A + B])
 
 				num_res = (C - 1) if C >= 1 else len(res)
-				print(f"call: returned with {num_res} results {res}")
+				# print(f"call: returned with {num_res} results {res}")
 
 				for i in range(num_res):
 					stack[A + i] = res[i]
@@ -439,25 +448,21 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				else:
 					res = stack[A].call(env, stack[A + 1:A + B])
 
-				print(f"tailcall: returning with {len(res)} results {res}")
+				# print(f"tailcall: returning with {len(res)} results {res}")
 				return res
-			case 0x1E: # return
-				# TODO close upvalues
-
+			case 0x1E: # returns
 				if B == 1:
-					print("B == 1: nil")
 					res = (LuaNil(),)
 				elif B == 0:
 					if len(stack[A:]) == 1:
-						print("B == 0: stack[A]")
 						res = (stack[A],)
 					else:
-						print("B == 0: stack[A:]")
 						res = tuple(stack[A:])
 				else:
-					print("B > 1: stack[A:A+B-1]")
 					res = tuple(stack[A:A + B - 1])
-				print(f"return: returning with {len(res)} results {res}")
+				# print(f"return: returning with {len(res)} results {res}")
+				for i in range(A, len(stack)):
+					stack.close_upval(i)
 				return res
 			case 0x1F: # forloop
 				stack[A] += stack[A + 2]
@@ -492,21 +497,27 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 						stack[A + i]
 					)
 			case 0x23: # close
-				raise LuaError("Not implemented: close") # TODO
-				# close all variables in the stack up to stack[A]
-
+				# TODO
+				for v in stack[A:]:
+					stack.close_upval(v)
 			case 0x24: # closure
 				func = lua_func.func_protos[Bx]
-				new_upvals = [None] * func.num_upvals
+				new_upvals = []
 				while lua_func.instructs[pc + 1].opcode in {0x00, 0x04}:
 					pc += 1
 					inst = lua_func.instructs[pc]
+
+					# input(f" -> {inst.name}")
+
 					match inst.opcode:
 						case 0x00: # move
-							new_upvals[inst.A] = stack.open_upval(inst.B)
+							new_upvals.append(stack.open_upval(inst.B))
 						case 0x04: # getupval
-							new_upvals[inst.A] = upval[inst.B]
-				print("new upvals", new_upvals)
+							new_upvals.append(upval[inst.B])
+
+				if len(new_upvals) != func.num_upvals:
+					raise Exception("Internal VM error")
+
 				stack[A] = func.closure(new_upvals)
 			case 0x25: # vararg
 				raise LuaError("Not implemented: vararg") # TODO
