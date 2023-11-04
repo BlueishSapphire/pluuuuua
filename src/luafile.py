@@ -1,4 +1,5 @@
 from luatypes import *
+from luaenv import LuaEnv
 
 import struct
 
@@ -7,16 +8,16 @@ class LuaFile:
 	def __init__(self, filename: str, env: LuaEnv = LuaEnv.get_default()):
 		with open(filename, "rb") as f:
 			self.contents = f.read()
-		
+
 		self.func_proto_num = 0
 		self.position = 0
 		self.env = env
 		self.read_header()
 		self.main_func = self.get_func()
-	
+
 	def execute(self, args: list[LuaObject] = []):
 		try:
-			return self.main_func.call(self.env, [], args)
+			return self.main_func.call(self.env, args)
 		except LuaError as err:
 			print("LuaError:", err)
 
@@ -26,7 +27,7 @@ class LuaFile:
 		res = self.contents[start:end]
 		self.position += num_bytes
 		return res
-	
+
 	def get_byte(self):
 		return int.from_bytes(self.read(1))
 
@@ -35,10 +36,10 @@ class LuaFile:
 
 	def get_int(self) -> int:
 		return int.from_bytes(self.read(self.int_size), self.endianness)
-	
+
 	def get_size_t(self) -> int:
 		return int.from_bytes(self.read(self.size_size), self.endianness)
-	
+
 	def get_str(self) -> str:
 		size = self.get_size_t()
 		return self.read(size).decode("utf-8")[:-1]
@@ -52,7 +53,7 @@ class LuaFile:
 
 	def get_bool(self) -> bool:
 		return bool(self.get_byte())
-	
+
 	def get_number(self) -> int | float:
 		return struct.unpack('d', self.read(self.number_size))[0]
 
@@ -104,8 +105,8 @@ class LuaFile:
 		assert self.lua_version == 0x51, "compiled with the wrong lua version (expected lua 5.1)"
 		assert self.format_version == 0, "not the official format version"
 		assert self.endianness == "little", "expected endianness to be little but it was big"
-		assert self.int_size == 4, f"expected int size of 4, found {int_size}"
-		assert self.size_size == 8, f"expected size_t size of 8, found {size_t_size}"
-		assert self.instruct_size == 4, f"expected instruction size of 4, found {instruction_size}"
-		assert self.number_size == 8, f"expected lua_Number size of 8, found {number_size}"
+		assert self.int_size == 4, f"expected int size of 4, found {self.int_size}"
+		assert self.size_size == 8, f"expected size_t size of 8, found {self.size_size}"
+		assert self.instruct_size == 4, f"expected instruct size of 4, found {self.instruct_size}"
+		assert self.number_size == 8, f"expected number size of 8, found {self.number_size}"
 		assert not self.is_integral, "expected integral flag to be unset, but it was set"

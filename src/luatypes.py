@@ -1,6 +1,6 @@
-import copy
-
-from luainst import *
+from fbyte import decode_fbyte
+from luainst import InstructKind, LuaInstruct
+from luaenv import LuaEnv
 
 
 class LuaError(Exception):
@@ -23,38 +23,48 @@ def maybe_attempt_op(op_name: str, left, right):
 class LuaObject:
 	name: str = "object"
 	value: any = None
-	
+
 	def tostring(self) -> any: return LuaNil()
 	def tonumber(self) -> any: return LuaNil()
 
 	def call(self):
 		raise LuaError(f"attempt to call a {self.name} value")
+
 	def get_from(self):
 		raise LuaError(f"attempt to index a {self.name} value")
+
 	def op_len(self) -> int:
 		if type(self) in NO_LENGTH:
 			raise LuaError(f"attempt to get length of a {self.name} value")
+
 	def op_add(self, other) -> any:
 		maybe_attempt_op("add", self, other)
 		return type(self)(self.value + other.value)
+
 	def op_sub(self, other) -> any:
 		maybe_attempt_op("sub", self, other)
 		return type(self)(self.value - other.value)
+
 	def op_mul(self, other) -> any:
 		maybe_attempt_op("mul", self, other)
 		return type(self)(self.value * other.value)
+
 	def op_div(self, other) -> any:
 		maybe_attempt_op("div", self, other)
 		return type(self)(self.value / other.value)
+
 	def op_mod(self, other) -> any:
 		maybe_attempt_op("mod", self, other)
 		return type(self)(self.value % other.value)
+
 	def op_pow(self, other) -> any:
 		maybe_attempt_op("pow", self, other)
 		return type(self)(self.value ** other.value)
+
 	def op_unm(self) -> any:
 		maybe_attempt_op("unm", self, self)
 		return type(self)(-self.value)
+
 	def op_not(self) -> any:
 		return LuaBoolean(False)
 
@@ -63,6 +73,7 @@ class LuaNil(LuaObject):
 	name = "nil"
 
 	def __init__(self): pass
+
 	def tostring(self): return self
 	def tonumber(self): return self
 
@@ -76,9 +87,10 @@ class LuaNumber(LuaObject):
 	name = "number"
 
 	def __init__(self, value: int | float): self.value = float(value)
+
 	def tostring(self): return LuaString(str(self.value))
 	def tonumber(self): return self
-	
+
 	def __str__(self): return str(self.value)
 	def __repr__(self): return f"LuaNumber({self.value})"
 
@@ -87,9 +99,10 @@ class LuaString(LuaObject):
 	name = "string"
 
 	def __init__(self, value: str): self.value = str(value)
+
 	def tostring(self): return self
 	def tonumber(self): return LuaNumber(str(self.value))
-	
+
 	def __str__(self): return self.value
 	def __repr__(self): return f"LuaString({self.value})"
 
@@ -98,6 +111,7 @@ class LuaBoolean(LuaObject):
 	name = "boolean"
 
 	def __init__(self, value: bool): self.value = bool(value)
+
 	def tostring(self): return "true" if self.value else "false"
 	def tonumber(self): return LuaNil
 
@@ -114,12 +128,14 @@ class LuaTable(LuaObject):
 
 		self.arr = [LuaNil] * arr_size
 		self.hash = {}
+
 	def tostring(self): return f"table: 0x{id(self):X}"
 	def tonumber(self): return LuaNil()
-	def get_from(self, key: str): return self.hash.get(key, lua_Nil)
+
+	def get_from(self, key: str): return self.hash.get(key, LuaNil)
 	def set_hash(self, key: str, val: any): self.hash.update({key: val})
 	def set_arr(self, idx: int, val: any): self.arr[idx - 1] = val
-	
+
 	def op_len(self): return len(self.arr) # TODO
 
 	def __str__(self): return f"table: 0x{id(self):X}"
@@ -162,7 +178,7 @@ class LuaFunction(LuaObject):
 		self.local_vars = local_vars
 		self.upval_names = upval_names
 		self.upvals = upvals or ([None] * num_upvals)
-	
+
 	def closure(self, upvals: list[LuaObject]):
 		new_closure = LuaFunction(
 			self.proto_num,
@@ -192,11 +208,12 @@ class LuaFunction(LuaObject):
 	def tostring(self): return f"function: 0x{id(self):X}"
 	def tonumber(self): return LuaNil()
 
-	def call(self, env, upvals, args):
-		return call_lua_function(self, env, upvals, args)
+	def call(self, env, args):
+		return call_lua_function(self, env, args)
 
 	def __str__(self): return f"function: 0x{id(self):X}"
 	def __repr__(self): return f"LuaFunction({self.value})"
+
 	def get_debug_str(self):
 		res = f".function  {self.num_upvals} {self.num_params} x {self.max_stack_size}\n"
 		for i, local in enumerate(self.local_vars):
@@ -239,7 +256,7 @@ class LuaPyFunction(LuaObject):
 	def call(self, env, upvals, args):
 		res = self.func(*args)
 		return make_lua_type(res)
-	
+
 	def __str__(self): return self.func.__name__
 	def __repr__(self): return f"LuaPyFunction({self.func.__name__})"
 
@@ -272,173 +289,226 @@ def make_lua_type(val: any) -> tuple[LuaObject]:
 			raise Exception("unrecognised type: " + str(type(val)))
 
 
-def call_lua_function(lua_func, env: LuaEnv, upvals: list[LuaObject], args: list[LuaObject]):
+class LuaStack:
+	def __init__(self, max_stack_size: int):
+		self.max_stack_size = max_stack_size
+		self.registers = [None] * max_stack_size
+		self.pool = {}
+
+	def __getitem__(self, idx: int):
+		return self.registers[idx]
+
+	def __setitem__(self, idx: int, val: LuaObject):
+		# assert isinstance(val, LuaObject), "tried to set a non-lua value to a register"
+		self.registers[idx] = val
+
+	def __len__(self):
+		return len(self.registers)
+
+	def open_upval(self, idx: int):
+		self.pool.update({idx: self[idx]})
+		return LuaUpvalue(self, idx)
+
+	def get_upval(self, idx: int):
+		return self.pool[idx]
+
+	def set_upval(self, idx: int, val: LuaObject):
+		# assert isinstance(val, LuaObject), "tried to set a non-lua value to an upvalue"
+		self.pool[idx] = val
+
+	def close_upval(self, idx: int):
+		del self.pool[idx]
+
+
+class LuaUpvalue:
+	def __init__(self, parent: LuaStack, idx: int):
+		self.parent = parent
+		self.idx = idx
+
+	def set(self, val: LuaObject):
+		self.parent.set_upval(self.idx, val)
+
+	def get(self):
+		return self.parent.get_upval(self.idx)
+
+	def close(self):
+		self.parent.close_upval(self.idx)
+
+
+def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 	pc = 0
-	reg = [LuaNil] * lua_func.max_stack_size
+	stack = LuaStack(lua_func.max_stack_size)
 	const = lua_func.consts
-	local = lua_func.local_vars
 	upval = lua_func.upvals
 
-	def reg_or_const(val: int):
-		return const[val ^ 256] if val & 256 else reg[val]
+	def stack_or_const(val: int):
+		return const[val ^ 256] if val & 256 else stack[val]
 
 	while pc < len(lua_func.instructs):
 		inst = lua_func.instructs[pc]
 		A, B, C, Bx, sBx = inst.A, inst.B, inst.C, inst.Bx, inst.sBx
+
 		input(f"{lua_func.proto_num}:[{pc + 1}] {inst.name}")
-		
+
 		match inst.opcode:
 			case 0x00: # move
-				reg[A] = reg[B]
+				stack[A] = stack[B]
 			case 0x01: # loadk
-				reg[A] = const[Bx]
+				stack[A] = const[Bx]
 			case 0x02: # loadbool
-				reg[A] = LuaBool(reg[B])
-				if bool(C): pc += 1
+				stack[A] = LuaBoolean(stack[B])
+				if bool(C):
+					pc += 1
 			case 0x03: # loadnil
 				for i in range(A, B + 1):
-					reg[i] = LuaNil()
+					stack[i] = LuaNil()
 			case 0x04: # getupval
-				reg[A] = upval[B]
+				stack[A] = upval[B].get()
 			case 0x05: # getglobal
-				reg[A] = env.get(const[Bx])
+				stack[A] = env.get(const[Bx])
 			case 0x06: # gettable
-				reg[A] = reg[B].get(reg_or_const(C))
+				stack[A] = stack[B].get(stack_or_const(C))
 			case 0x07: # setglobal
-				env.set(const[Bx], reg[A])
+				env.set(const[Bx], stack[A])
 			case 0x08: # setupval
-				upval[B] = reg[A]
+				upval[B].set(stack[A])
 			case 0x09: # settable
-				reg[A].set_hash(reg_or_const(B), reg_or_const(C))
+				stack[A].set_hash(stack_or_const(B), stack_or_const(C))
 			case 0x0A: # newtable
-				reg[A] = lua_Table(decode_fbyte(B), decode_fbyte(C))
+				stack[A] = LuaTable(decode_fbyte(B), decode_fbyte(C))
 			case 0x0B: # self
-				reg[A + 1] = reg[B]
-				reg[A] = reg[B].get(reg_or_const(C))
+				stack[A + 1] = stack[B]
+				stack[A] = stack[B].get(stack_or_const(C))
 			case 0x0C: # add
-				reg[A] = reg_or_const(B).op_add(reg_or_const(C))
+				stack[A] = stack_or_const(B).op_add(stack_or_const(C))
 			case 0x0D: # sub
-				reg[A] = reg_or_const(B).op_sub(reg_or_const(C))
+				stack[A] = stack_or_const(B).op_sub(stack_or_const(C))
 			case 0x0E: # mul
-				reg[A] = reg_or_const(B).op_mul(reg_or_const(C))
+				stack[A] = stack_or_const(B).op_mul(stack_or_const(C))
 			case 0x0F: # div
-				reg[A] = reg_or_const(B).op_div(reg_or_const(C))
+				stack[A] = stack_or_const(B).op_div(stack_or_const(C))
 			case 0x10: # mod
-				reg[A] = reg_or_const(B).op_mod(reg_or_const(C))
+				stack[A] = stack_or_const(B).op_mod(stack_or_const(C))
 			case 0x11: # pow
-				reg[A] = reg_or_const(B).op_pow(reg_or_const(C))
+				stack[A] = stack_or_const(B).op_pow(stack_or_const(C))
 			case 0x12: # unm
-				reg[A] = reg[B].op_unm()
+				stack[A] = stack[B].op_unm()
 			case 0x13: # not
-				reg[A] = reg[B].op_not()
+				stack[A] = stack[B].op_not()
 			case 0x14: # len
-				reg[A] = reg[B].op_len()
+				stack[A] = stack[B].op_len()
 			case 0x15: # concat
-				reg[A] = LuaString("".join(map(lambda s: s.value, reg[B:C+1])))
+				stack[A] = LuaString("".join(map(lambda s: s.value, stack[B:C + 1])))
 			case 0x16: # jmp
 				pc += sBx
 			case 0x17: # eq
-				if (RK(B) == RK(C)) != bool(A):
+				if (stack_or_const(B) == stack_or_const(C)) != bool(A):
 					pc += 1
 			case 0x18: # lt
-				if (RK(B) < RK(C)) != bool(A):
+				if (stack_or_const(B) < stack_or_const(C)) != bool(A):
 					pc += 1
 			case 0x19: # le
-				if (RK(B) <= RK(C)) != bool(A):
+				if (stack_or_const(B) <= stack_or_const(C)) != bool(A):
 					pc += 1
 			case 0x1A: # test
-				if bool(reg[B]) == bool(C):
+				if bool(stack[B]) == bool(C):
 					pc += 1
 			case 0x1B: # testset
-				if bool(reg[B]) == bool(C):
+				if bool(stack[B]) == bool(C):
 					pc += 1
 				else:
-					reg[A] = reg[B]
+					stack[A] = stack[B]
 			case 0x1C: # call
 				if B == 1:
-					print(f"calling nargs=0")
-					res = reg[A].call(env, [], [])
+					res = stack[A].call(env, [])
 				elif B == 0:
-					print(f"calling nargs=(var){len(reg[A+1:])}")
-					res = reg[A].call(env, [], reg[A+1:])
+					res = stack[A].call(env, stack[A + 1:])
 				else:
-					print(f"calling nargs={B - 1}")
-					res = reg[A].call(env, [], reg[A+1:A+B])
+					res = stack[A].call(env, stack[A + 1:A + B])
 
 				num_res = (C - 1) if C >= 1 else len(res)
-				print(f"result nres={num_res} res={res}")
+				print(f"call: returned with {num_res} results {res}")
 
 				for i in range(num_res):
-					reg[A + i] = res[i]
+					stack[A + i] = res[i]
 			case 0x1D: # tail_call
 				if B == 1:
-					res = reg[A].call(env, [], [])
+					res = stack[A].call(env, [])
 				elif B == 0:
-					res = reg[A].call(env, [], reg[A+1:])
+					res = stack[A].call(env, stack[A + 1:])
 				else:
-					res = reg[A].call(env, [], reg[A+1:A+B])
-				
+					res = stack[A].call(env, stack[A + 1:A + B])
+
+				print(f"tailcall: returning with {len(res)} results {res}")
 				return res
 			case 0x1E: # return
 				# TODO close upvalues
 
 				if B == 1:
-					return (LuaNil(),)
+					print("B == 1: nil")
+					res = (LuaNil(),)
 				elif B == 0:
-					if len(reg[A:]) == 1:
-						return (reg[A],)
+					if len(stack[A:]) == 1:
+						print("B == 0: stack[A]")
+						res = (stack[A],)
 					else:
-						return tuple(reg[A:])
+						print("B == 0: stack[A:]")
+						res = tuple(stack[A:])
 				else:
-					return tuple(reg[A:A+B-1])
+					print("B > 1: stack[A:A+B-1]")
+					res = tuple(stack[A:A + B - 1])
+				print(f"return: returning with {len(res)} results {res}")
+				return res
 			case 0x1F: # forloop
-				reg[A] += reg[A + 2]
-				if reg[A] <= reg[A + 1]:
+				stack[A] += stack[A + 2]
+				if stack[A] <= stack[A + 1]:
 					pc += sBx
-					reg[A + 3] = reg[A]
+					stack[A + 3] = stack[A]
 			case 0x20: # forprep
-				reg[A] -= reg[A + 2]
+				stack[A] -= stack[A + 2]
 				pc += sBx
 			case 0x21: # tforloop
-				res = reg[A].call(env, [], [reg[A + 1], reg[A + 2]])
+				res = stack[A].call(env, [], [stack[A + 1], stack[A + 2]])
 				for i in range(0, C):
-					reg[A + i + 3] = res[i]
-				
-				if isinstance(reg[A + 3], LuaNil):
-					reg[A + 2] = reg[A + 3]
+					stack[A + i + 3] = res[i]
+
+				if isinstance(stack[A + 3], LuaNil):
+					stack[A + 2] = stack[A + 3]
 				else:
 					pc += 1
 			case 0x22: # setlist
 				LFIELDS_PER_FLUSH = 50
 
 				if B == 0:
-					B = len(reg) - A
+					B = len(stack) - A
 				if C == 0:
 					pc += 1
 					next_inst = lua_func.instructs[pc].raw
 					C = next_inst[0] << 24 | next_inst[1] << 16 | next_inst[2] << 8 | next_inst[3]
-				
+
 				for i in range(1, B + 1):
-					reg[A].set_arr(
+					stack[A].set_arr(
 						((C - 1) * LFIELDS_PER_FLUSH + i),
-						reg[A + i]
+						stack[A + i]
 					)
 			case 0x23: # close
 				raise LuaError("Not implemented: close") # TODO
+				# close all variables in the stack up to stack[A]
+
 			case 0x24: # closure
 				func = lua_func.func_protos[Bx]
 				new_upvals = [None] * func.num_upvals
-				while lua_func.instructs[pc].opcode in {0x00, 0x04}:
+				while lua_func.instructs[pc + 1].opcode in {0x00, 0x04}:
+					pc += 1
 					inst = lua_func.instructs[pc]
 					match inst.opcode:
 						case 0x00: # move
-							new_upvals[reg[inst.A]] = reg[inst.B]
+							new_upvals[inst.A] = stack.open_upval(inst.B)
 						case 0x04: # getupval
-							new_upvals[reg[inst.A]] = upval[inst.B]
-					pc += 1
-				reg[A] = func.closure(new_upvals)
+							new_upvals[inst.A] = upval[inst.B]
+				print("new upvals", new_upvals)
+				stack[A] = func.closure(new_upvals)
 			case 0x25: # vararg
 				raise LuaError("Not implemented: vararg") # TODO
-		
-		pc += 1
 
+		pc += 1

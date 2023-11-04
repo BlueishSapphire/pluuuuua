@@ -1,9 +1,4 @@
 from enum import Enum, auto
-from dataclasses import dataclass
-
-from luaenv import LuaEnv
-from luatypes import *
-from fbyte import decode_fbyte
 
 
 class InstructKind(Enum):
@@ -89,9 +84,9 @@ class LuaInstruct:
 		self.Bx = (self.B << 9) | self.C
 		# sBx is signed Bx
 		self.sBx = self.Bx - 131071
-	
+
 		self.name, self.kind = INSTRUCT_DESCRIPTIONS[self.opcode]
-	
+
 	def __str__(self):
 		res = self.name + "("
 		match self.kind:
@@ -111,7 +106,7 @@ class LuaInstruct:
 				res += "A, B, C"
 		res += ")"
 		return res
-	
+
 	def __repr__(self):
 		res = f"LuaInstruct(0x{self.raw_int:08X}, {self.name}, "
 		match self.kind:
@@ -131,4 +126,3 @@ class LuaInstruct:
 				res += "A, B, C"
 		res += ")"
 		return res
-
