@@ -1,2 +1,2 @@
 # pluuuuua
-Lua VM and bytecode interpreter written in python.
+Simple Lua 5.1 VM written in python.
