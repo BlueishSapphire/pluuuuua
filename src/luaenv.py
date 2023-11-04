@@ -20,7 +20,8 @@ class LuaEnv:
 		return self.func_protos[proto_num]
 
 	def get(self, name):
-		return self.globals.get(name.value, LuaNil)
+		from luatypes import LuaNil
+		return self.globals.get(name.value, LuaNil())
 	
 	def set(self, name, val):
 		self.globals[name.value] = val
