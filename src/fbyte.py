@@ -14,5 +14,5 @@ def decode_fbyte(byt: int):
 
 	if exponent == 0:
 		return mantissa
-	else:
-		return ((1 << FBYTE_MANTISSA_SIZE) | mantissa) << (exponent - 1)
+	
+	return ((1 << FBYTE_MANTISSA_SIZE) | mantissa) << (exponent - 1)
