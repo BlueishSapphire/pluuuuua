@@ -69,8 +69,10 @@ class LuaFile:
 		return (self.get_str(), self.get_int(), self.get_int())
 
 	def get_func(self):
+		my_proto_num = self.func_proto_num
+		self.func_proto_num += 1
 		func = LuaFunction(
-			proto_num=self.func_proto_num,
+			proto_num=my_proto_num,
 			source_name=self.get_str(),
 			first_line_num=self.get_int(),
 			last_line_num=self.get_int(),
@@ -82,12 +84,9 @@ class LuaFile:
 			consts=self.get_list(self.get_const),
 			func_protos=self.get_list(self.get_func),
 			line_positions=self.get_list(self.get_int),
-			all_locals=self.get_list(self.get_local),
-			all_upvals=self.get_list(self.get_str),
+			local_vars=self.get_list(self.get_local),
+			upval_names=self.get_list(self.get_str),
 		)
-		if func.proto_num != 0:
-			self.env.new_func(func)
-		self.func_proto_num += 1
 		return func
 
 	def read_header(self) -> None:

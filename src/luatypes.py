@@ -1,3 +1,5 @@
+import copy
+
 from luainst import *
 
 
@@ -141,8 +143,9 @@ class LuaFunction(LuaObject):
 		consts: list[any],
 		func_protos: list[any],
 		line_positions: list[int],
-		all_locals: list[tuple],
-		all_upvals: list[str],
+		local_vars: list[tuple],
+		upval_names: list[str],
+		upvals: list[LuaObject] = None
 	):
 		self.proto_num = proto_num
 		self.source_name = source_name
@@ -156,8 +159,35 @@ class LuaFunction(LuaObject):
 		self.consts = consts
 		self.func_protos = func_protos
 		self.line_positions = line_positions
-		self.all_locals = all_locals
-		self.all_upvals = all_upvals
+		self.local_vars = local_vars
+		self.upval_names = upval_names
+		self.upvals = upvals or ([None] * num_upvals)
+	
+	def closure(self, upvals: list[LuaObject]):
+		new_closure = LuaFunction(
+			self.proto_num,
+			self.source_name,
+			self.first_line_num,
+			self.last_line_num,
+			self.num_upvals,
+			self.num_params,
+			self.is_vararg,
+			self.max_stack_size,
+			self.instructs,
+			self.consts,
+			self.func_protos,
+			self.line_positions,
+			self.local_vars,
+			self.upval_names,
+			upvals
+		)
+		return new_closure
+
+	def set_upval(self, idx: int, val: LuaObject) -> None:
+		self.upvals[idx] = val
+
+	def get_upval(self, idx: int) -> LuaObject:
+		return self.upvals[idx]
 
 	def tostring(self): return f"function: 0x{id(self):X}"
 	def tonumber(self): return LuaNil()
@@ -167,6 +197,37 @@ class LuaFunction(LuaObject):
 
 	def __str__(self): return f"function: 0x{id(self):X}"
 	def __repr__(self): return f"LuaFunction({self.value})"
+	def get_debug_str(self):
+		res = f".function  {self.num_upvals} {self.num_params} x {self.max_stack_size}\n"
+		for i, local in enumerate(self.local_vars):
+			res += f".local  \"{local[0]}\"  ; {i}\n"
+		for i, const in enumerate(self.consts):
+			res += f".const  {const}  ; {i}\n"
+		for i, upval in enumerate(self.upval_names):
+			res += f".upval  \"{upval}\"  ; {i}\n"
+		for i, func in enumerate(self.func_protos):
+			res += "\n"
+			res += "  " + "\n  ".join(func.get_debug_str().split("\n"))
+			res += "\n"
+		for i, inst in enumerate(self.instructs):
+			res += f"[{i + 1}] {inst.name:9} "
+			match inst.kind:
+				case InstructKind.iA:
+					res += f"{inst.A:3d}"
+				case InstructKind.iAB:
+					res += f"{inst.A:3d} {inst.B:3d}"
+				case InstructKind.iABC:
+					res += f"{inst.A:3d} {inst.B:3d} {inst.C:3d}"
+				case InstructKind.iABx:
+					res += f"{inst.A:3d} {inst.Bx:3d}"
+				case InstructKind.iAC:
+					res += f"{inst.A:3d} {inst.C:3d}"
+				case InstructKind.iAsBx:
+					res += f"{inst.A:3d} {inst.sBx:3d}"
+				case InstructKind.isBx:
+					res += f"{inst.sBx:3d}"
+			res += "\n"
+		return res
 
 
 class LuaPyFunction(LuaObject):
@@ -215,7 +276,8 @@ def call_lua_function(lua_func, env: LuaEnv, upvals: list[LuaObject], args: list
 	pc = 0
 	reg = [LuaNil] * lua_func.max_stack_size
 	const = lua_func.consts
-	upval = [None] * lua_func.num_upvals
+	local = lua_func.local_vars
+	upval = lua_func.upvals
 
 	def reg_or_const(val: int):
 		return const[val ^ 256] if val & 256 else reg[val]
@@ -223,6 +285,7 @@ def call_lua_function(lua_func, env: LuaEnv, upvals: list[LuaObject], args: list
 	while pc < len(lua_func.instructs):
 		inst = lua_func.instructs[pc]
 		A, B, C, Bx, sBx = inst.A, inst.B, inst.C, inst.Bx, inst.sBx
+		input(f"{lua_func.proto_num}:[{pc + 1}] {inst.name}")
 		
 		match inst.opcode:
 			case 0x00: # move
@@ -292,7 +355,6 @@ def call_lua_function(lua_func, env: LuaEnv, upvals: list[LuaObject], args: list
 				else:
 					reg[A] = reg[B]
 			case 0x1C: # call
-				print("stack", reg)
 				if B == 1:
 					print(f"calling nargs=0")
 					res = reg[A].call(env, [], [])
@@ -305,7 +367,6 @@ def call_lua_function(lua_func, env: LuaEnv, upvals: list[LuaObject], args: list
 
 				num_res = (C - 1) if C >= 1 else len(res)
 				print(f"result nres={num_res} res={res}")
-				print("stack", reg)
 
 				for i in range(num_res):
 					reg[A + i] = res[i]
@@ -365,7 +426,17 @@ def call_lua_function(lua_func, env: LuaEnv, upvals: list[LuaObject], args: list
 			case 0x23: # close
 				raise LuaError("Not implemented: close") # TODO
 			case 0x24: # closure
-				raise LuaError("Not implemented: closure") # TODO
+				func = lua_func.func_protos[Bx]
+				new_upvals = [None] * func.num_upvals
+				while lua_func.instructs[pc].opcode in {0x00, 0x04}:
+					inst = lua_func.instructs[pc]
+					match inst.opcode:
+						case 0x00: # move
+							new_upvals[reg[inst.A]] = reg[inst.B]
+						case 0x04: # getupval
+							new_upvals[reg[inst.A]] = upval[inst.B]
+					pc += 1
+				reg[A] = func.closure(new_upvals)
 			case 0x25: # vararg
 				raise LuaError("Not implemented: vararg") # TODO
 		

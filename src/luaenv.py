@@ -6,19 +6,7 @@ from functools import partial
 class LuaEnv:
 	def __init__(self):
 		self.globals = {}
-		self.func_protos = []
-
-	def new_func(self, func):
-		len_diff = func.proto_num - len(self.func_protos)
-		
-		if len_diff >= 0:
-			self.func_protos.extend([None] * (len_diff + 1))
-		
-		self.func_protos[func.proto_num] = func
-
-	def get_func(self, proto_num):
-		return self.func_protos[proto_num]
-
+	
 	def get(self, name):
 		from luatypes import LuaNil
 		return self.globals.get(name.value, LuaNil())
