@@ -454,7 +454,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				for i in range(num_res):
 					stack[A + i] = res[i]
 				
-				print(stack.registers)
+				# print(stack.registers)
 			case 0x1D: # tail_call
 				if B == 1:
 					args = []
@@ -485,7 +485,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				for i in range(A, len(stack)):
 					stack.pop(A)
 
-				print(f"return: returning with {len(res)} results {res}")
+				# print(f"return: returning with {len(res)} results {res}")
 				return res
 			case 0x1F: # forloop
 				stack[A] += stack[A + 2]
