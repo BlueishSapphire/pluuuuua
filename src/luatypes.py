@@ -303,7 +303,7 @@ class LuaStack:
 		self.registers = [None] * max_stack_size
 		self.pool = {}
 
-	def __getitem__(self, idx: int):
+	def __getitem__(self, idx: int | slice):
 		return self.registers[idx]
 
 	def __setitem__(self, idx: int, val: LuaObject):
@@ -324,7 +324,7 @@ class LuaStack:
 		assert isinstance(val, LuaObject), "tried to set a non-lua value to an upvalue"
 		self.pool[idx] = val
 
-	def close_upval(self, idx: int):
+	def pop(self, idx: int):
 		self.registers.pop(idx)
 		self.registers.append(None)
 
@@ -341,7 +341,11 @@ class LuaUpvalue(LuaObject):
 		return self.parent.get_upval(self.idx)
 
 	def close(self):
-		self.parent.close_upval(self.idx)
+		self.parent.pop(self.idx)
+
+
+def not_none(l: list) -> list:
+	return list(filter(lambda a: a is not None, l))
 
 
 def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
@@ -429,24 +433,44 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 					stack[A] = stack[B]
 			case 0x1C: # call
 				if B == 1:
-					res = stack[A].call(env, [])
+					args = []
 				elif B == 0:
-					res = stack[A].call(env, stack[A + 1:])
+					args = stack[A + 1:]
 				else:
-					res = stack[A].call(env, stack[A + 1:A + B])
+					args = stack[A + 1:A + B]
+
+				args = not_none(args)
+
+				# print(f"call: args {args}")
+				res = stack[A].call(env, args)
+
+				if isinstance(stack[A], LuaPyFunction):
+					for i in range(A, len(stack)):
+						stack.pop(A)
 
 				num_res = (C - 1) if C >= 1 else len(res)
 				# print(f"call: returned with {num_res} results {res}")
 
 				for i in range(num_res):
 					stack[A + i] = res[i]
+				
+				print(stack.registers)
 			case 0x1D: # tail_call
 				if B == 1:
-					res = stack[A].call(env, [])
+					args = []
 				elif B == 0:
-					res = stack[A].call(env, stack[A + 1:])
+					args = stack[A + 1:]
 				else:
-					res = stack[A].call(env, stack[A + 1:A + B])
+					args = stack[A + 1:A + B]
+
+				args = not_none(args)
+
+				# print(f"tailcall: args {args}")
+				res = stack[A].call(env, args)
+
+				if isinstance(stack[A], LuaPyFunction):
+					for i in range(A, len(stack)):
+						stack.pop(A)
 
 				# print(f"tailcall: returning with {len(res)} results {res}")
 				return res
@@ -454,15 +478,14 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				if B == 1:
 					res = (LuaNil(),)
 				elif B == 0:
-					if len(stack[A:]) == 1:
-						res = (stack[A],)
-					else:
-						res = tuple(stack[A:])
+					res = tuple(stack[A:])
 				else:
 					res = tuple(stack[A:A + B - 1])
-				# print(f"return: returning with {len(res)} results {res}")
+
 				for i in range(A, len(stack)):
-					stack.close_upval(i)
+					stack.pop(A)
+
+				print(f"return: returning with {len(res)} results {res}")
 				return res
 			case 0x1F: # forloop
 				stack[A] += stack[A + 2]
@@ -497,9 +520,8 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 						stack[A + i]
 					)
 			case 0x23: # close
-				# TODO
-				for v in stack[A:]:
-					stack.close_upval(v)
+				for i in range(A, len(stack)):
+					stack.pop(i)
 			case 0x24: # closure
 				func = lua_func.func_protos[Bx]
 				new_upvals = []
