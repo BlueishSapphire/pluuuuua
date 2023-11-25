@@ -24,7 +24,7 @@ class LuaObject:
 	name: str = "object"
 	value: any = None
 
-	def tostring(self): return f"{self.name}: 0x{id(self):x}"
+	def tostring(self): return LuaString(f"{self.name}: 0x{id(self):x}")
 	def tonumber(self): return LuaNil()
 
 	def call(self):
@@ -137,7 +137,7 @@ class LuaBoolean(LuaObject):
 			self.value = value.value
 		self.value = bool(value)
 
-	def tostring(self): return "true" if self.value else "false"
+	def tostring(self): return LuaString("true") if self.value else LuaString("false")
 	def tonumber(self): return LuaNil()
 
 	def __str__(self): return "true" if self.value else "false"
@@ -428,7 +428,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 			case 0x14: # len
 				stack[A] = stack[B].op_len()
 			case 0x15: # concat
-				stack[A] = LuaString("".join(map(lambda s: s.value, stack[B:C + 1])))
+				stack[A] = LuaString("".join(map(lambda s: s.tostring(), stack[B:C + 1])))
 			case 0x16: # jmp
 				pc += sBx
 			case 0x17: # eq
@@ -468,7 +468,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				if debug: print(f"call: returned with {num_res} results {res}")
 
 				for i in range(num_res):
-					stack[A + i] = res[i]
+					stack[A + i] = res[i] if i < len(res) else LuaNil()
 			case 0x1D: # tail_call
 				if B == 1:
 					args = []
