@@ -67,6 +67,13 @@ class LuaObject:
 
 	def op_not(self) -> any:
 		return LuaBoolean(False)
+	
+	def __eq__(self, other): return self.value == other.value
+	def __ne__(self, other): return self.value != other.value
+	def __lt__(self, other): return self.value < other.value
+	def __le__(self, other): return self.value <= other.value
+	def __gt__(self, other): return self.value > other.value
+	def __ge__(self, other): return self.value >= other.value
 
 	def __str__(self): return f"{self.name}: 0x{id(self):x}"
 	def __repr__(self): return type(self).__name__ + f"({self.value})"
@@ -269,6 +276,9 @@ class LuaPyFunction(LuaObject):
 		if isinstance(res, tuple):
 			return tuple(make_lua_type(r) for r in res)
 		return (make_lua_type(res),)
+	
+	def __repr__(self):
+		return f"LuaPyFunction({self.func.__name__})"
 
 
 NO_LENGTH = [LuaObject, LuaNil, LuaBoolean, LuaNumber, LuaFunction, LuaPyFunction]
@@ -307,7 +317,7 @@ class LuaStack:
 		return self.registers[idx]
 
 	def __setitem__(self, idx: int, val: LuaObject):
-		# assert isinstance(val, LuaObject), "tried to set a non-lua value to a register"
+		assert isinstance(val, LuaObject), "tried to set a non-lua value to a register"
 		self.registers[idx] = val
 
 	def __len__(self):
@@ -348,9 +358,14 @@ def not_none(l: list) -> list:
 	return list(filter(lambda a: a is not None, l))
 
 
+debug = False
+
+
 def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 	pc = 0
 	stack = LuaStack(lua_func.max_stack_size)
+	for i in range(len(args)):
+		stack[i] = args[i]
 	const = lua_func.consts
 	upval = lua_func.upvals
 
@@ -361,7 +376,9 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 		inst = lua_func.instructs[pc]
 		A, B, C, Bx, sBx = inst.A, inst.B, inst.C, inst.Bx, inst.sBx
 
-		# input(f"{lua_func.proto_num}:[{pc + 1}] {inst.name}")
+		if debug:
+			print(f"-> {stack.registers}")
+			input(f"{lua_func.proto_num}:[{pc + 1}] {inst.name}")
 
 		match inst.opcode:
 			case 0x00: # move
@@ -441,20 +458,17 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 
 				args = not_none(args)
 
-				# print(f"call: args {args}")
+				if debug: print(f"call: args {args}")
 				res = stack[A].call(env, args)
 
-				if isinstance(stack[A], LuaPyFunction):
-					for i in range(A, len(stack)):
-						stack.pop(A)
+				for i in range(A, len(stack)):
+					stack.pop(A)
 
 				num_res = (C - 1) if C >= 1 else len(res)
-				# print(f"call: returned with {num_res} results {res}")
+				if debug: print(f"call: returned with {num_res} results {res}")
 
 				for i in range(num_res):
 					stack[A + i] = res[i]
-				
-				# print(stack.registers)
 			case 0x1D: # tail_call
 				if B == 1:
 					args = []
@@ -465,16 +479,15 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 
 				args = not_none(args)
 
-				# print(f"tailcall: args {args}")
+				if debug: print(f"tailcall: args {args}")
 				res = stack[A].call(env, args)
 
-				if isinstance(stack[A], LuaPyFunction):
-					for i in range(A, len(stack)):
-						stack.pop(A)
+				for i in range(A, len(stack)):
+					stack.pop(A)
 
-				# print(f"tailcall: returning with {len(res)} results {res}")
+				if debug: print(f"tailcall: returning with {len(res)} results {res}")
 				return res
-			case 0x1E: # returns
+			case 0x1E: # return
 				if B == 1:
 					res = (LuaNil(),)
 				elif B == 0:
@@ -485,7 +498,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				for i in range(A, len(stack)):
 					stack.pop(A)
 
-				# print(f"return: returning with {len(res)} results {res}")
+				if debug: print(f"return: returning with {len(res)} results {res}")
 				return res
 			case 0x1F: # forloop
 				stack[A] += stack[A + 2]
