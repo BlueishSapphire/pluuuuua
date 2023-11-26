@@ -76,13 +76,21 @@ class LuaObject:
 		if LuaString not in [left_type, right_type]:
 			raise LuaError(f"attempt to concat a '{left_type.name}' with a '{right_type.name}'")
 		return LuaString(self.tostring().value + other.tostring().value)
-	
-	def __eq__(self, other): return self.value == other.value
-	def __ne__(self, other): return self.value != other.value
-	def __lt__(self, other): return self.value < other.value
-	def __le__(self, other): return self.value <= other.value
-	def __gt__(self, other): return self.value > other.value
-	def __ge__(self, other): return self.value >= other.value
+
+	def __eq__(self, other):
+		return type(self) == type(other) and self.value == other.value
+	def __ne__(self, other):
+		return type(self) == type(other) and self.value != other.value
+	def __lt__(self, other):
+		return type(self) == type(other) and self.value < other.value
+	def __le__(self, other):
+		return type(self) == type(other) and self.value <= other.value
+	def __gt__(self, other):
+		return type(self) == type(other) and self.value > other.value
+	def __ge__(self, other):
+		return type(self) == type(other) and self.value >= other.value
+
+	def __hash__(self): return hash(self.value)
 
 	def __str__(self): return f"{self.name}: 0x{id(self):x}"
 	def __repr__(self): return type(self).__name__ + f"({self.value})"
@@ -167,14 +175,17 @@ class LuaTable(LuaObject):
 		self.arr = [LuaNil()] * arr_size
 		self.hash = {}
 
-	def get_from(self, key: str):
-		if isinstance(key, LuaNumber):
-			key = key.value
-		if isinstance(key, LuaString):
-			key = key.value
-		return self.hash.get(key, LuaNil())
-	def set_hash(self, key: str, val: any): self.hash.update({key: val})
-	def set_arr(self, idx: int, val: any): self.arr[idx - 1] = val
+	def get_from(self, key: str | int):
+		if key in self.hash.keys():
+			return self.hash[key]
+		elif isinstance(key, int) and 0 <= key < len(self.arr):
+			return self.arr[key]
+		else:
+			return LuaNil()
+	def set_hash(self, key: str, val: any):
+		self.hash.update({key: val})
+	def set_arr(self, idx: int, val: any):
+		self.arr[idx - 1] = val
 
 	def op_len(self): return len(self.arr) # TODO
 
@@ -316,6 +327,8 @@ def make_lua_type(val: any) -> tuple[LuaObject]:
 			for i, v in enumerate(val):
 				t.set_arr(i + 1, make_lua_type(v))
 			return t
+		case f if callable(f):
+			return LuaPyFunction(f)
 		case _:
 			raise Exception("unrecognised type: " + str(type(val)))
 
@@ -410,7 +423,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 			case 0x05: # getglobal
 				stack[A] = env.get(const[Bx])
 			case 0x06: # gettable
-				stack[A] = stack[B].get_from(stack_or_const(C))
+				stack[A] = stack[B].get_from(stack_or_const(C).value)
 			case 0x07: # setglobal
 				env.set(const[Bx], stack[A])
 			case 0x08: # setupval
@@ -421,7 +434,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				stack[A] = LuaTable(decode_fbyte(B), decode_fbyte(C))
 			case 0x0B: # self
 				stack[A + 1] = stack[B]
-				stack[A] = stack[B].get_from(stack_or_const(C))
+				stack[A] = stack[B].get_from(stack_or_const(C).value)
 			case 0x0C: # add
 				stack[A] = stack_or_const(B).op_add(stack_or_const(C))
 			case 0x0D: # sub
@@ -515,12 +528,12 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				if debug: print(f"return: returning with {len(res)} results {res}")
 				return res
 			case 0x1F: # forloop
-				stack[A] += stack[A + 2]
+				stack[A] = stack[A].op_add(stack[A + 2])
 				if stack[A] <= stack[A + 1]:
 					pc += sBx
 					stack[A + 3] = stack[A]
 			case 0x20: # forprep
-				stack[A] -= stack[A + 2]
+				stack[A] = stack[A].op_sub(stack[A + 2])
 				pc += sBx
 			case 0x21: # tforloop
 				res = stack[A].call(env, [], [stack[A + 1], stack[A + 2]])
