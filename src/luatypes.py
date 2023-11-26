@@ -182,8 +182,25 @@ class LuaTable(LuaObject):
 			return self.arr[key]
 		else:
 			return LuaNil()
+
+	def items(self):
+		items = [(LuaNumber(i + 1), v) for i, v in enumerate(self.arr)]
+		items.extend(self.hash.items())
+		return items
+
+	def keys(self):
+		keys = [LuaNumber(i + 1) for i, _ in enumerate(self.arr)]
+		keys.extend(self.hash.keys())
+		return keys
+
+	def values(self):
+		values = self.arr
+		values.extend(self.hash.values())
+		return values
+
 	def set_hash(self, key: str, val: any):
 		self.hash.update({key: val})
+	
 	def set_arr(self, idx: int, val: any):
 		self.arr[idx - 1] = val
 
@@ -536,11 +553,12 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				stack[A] = stack[A].op_sub(stack[A + 2])
 				pc += sBx
 			case 0x21: # tforloop
-				res = stack[A].call(env, [], [stack[A + 1], stack[A + 2]])
+				res = stack[A].call(env, [stack[A + 1], stack[A + 2]])
+				
 				for i in range(0, C):
-					stack[A + i + 3] = res[i]
+					stack[A + 3 + i] = res[i]
 
-				if isinstance(stack[A + 3], LuaNil):
+				if not isinstance(stack[A + 3], LuaNil):
 					stack[A + 2] = stack[A + 3]
 				else:
 					pc += 1
