@@ -1,3 +1,5 @@
+from functools import reduce
+
 from fbyte import decode_fbyte
 from luainst import InstructKind, LuaInstruct
 from luaenv import LuaEnv
@@ -67,6 +69,13 @@ class LuaObject:
 
 	def op_not(self) -> any:
 		return LuaBoolean(False)
+
+	def op_concat(self, other) -> any:
+		left_type = type(self)
+		right_type = type(other)
+		if LuaString not in [left_type, right_type]:
+			raise LuaError(f"attempt to concat a '{left_type.name}' with a '{right_type.name}'")
+		return LuaString(self.tostring() + other.tostring())
 	
 	def __eq__(self, other): return self.value == other.value
 	def __ne__(self, other): return self.value != other.value
@@ -84,7 +93,7 @@ class LuaNil(LuaObject):
 
 	def __init__(self): pass
 
-	def tostring(self): return self
+	def tostring(self): return LuaString("nil")
 	def tonumber(self): return self
 
 	def op_not(self, other) -> any: return LuaBoolean(True)
@@ -428,7 +437,8 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 			case 0x14: # len
 				stack[A] = stack[B].op_len()
 			case 0x15: # concat
-				stack[A] = LuaString("".join(map(lambda s: s.tostring(), stack[B:C + 1])))
+				stack[A] = reduce(lambda l, r: l.op_concat(r), stack[B:C + 1])
+				# stack[A] = LuaString("".join(map(lambda s: s.tostring(), stack[B:C + 1])))
 			case 0x16: # jmp
 				pc += sBx
 			case 0x17: # eq
