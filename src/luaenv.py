@@ -1,11 +1,16 @@
 import math
 
 
-def lua_io_read(what) -> str:
+def lua_io_read(what: str | None = None) -> str:
 	res = input()
-	if what.startswith("*n"):
+	if what and what.startswith("*n"):
 		res = float(res)
 	return res
+
+
+def lua_error(msg: str | None = None, code: int | None = None) -> None:
+	from luatypes import LuaError
+	raise LuaError(msg)
 
 
 class LuaEnv:
@@ -26,6 +31,7 @@ class LuaEnv:
 		env = LuaEnv()
 		env.globals = {
 			"print": LuaPyFunction(lambda *args: print(*[a.tostring() for a in args])),
+			"error": LuaPyFunction(lambda msg = None, code = None: lua_error(msg, code)),
 			"type": LuaPyFunction(lambda o: o.name),
 			"tostring": LuaPyFunction(lambda o: o.tostring()),
 			"tonumber": LuaPyFunction(lambda o: o.tonumber()),
@@ -50,7 +56,7 @@ class LuaEnv:
 			}),
 			"io": make_lua_type({
 				"write": LuaPyFunction(lambda *args: print(*[a.tostring() for a in args], end="")),
-				"read": LuaPyFunction(lambda *args: tuple(lua_io_read(a.value) for a in args)),
+				"read": LuaPyFunction(lambda *args: tuple(lua_io_read(a.value) for a in args) if len(args) > 0 else lua_io_read()),
 			}),
 			"math": make_lua_type({
 				"sqrt": LuaPyFunction(lambda n: math.sqrt(n.value)),
