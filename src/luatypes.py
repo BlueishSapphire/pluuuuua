@@ -29,10 +29,10 @@ class LuaObject:
 	def tostring(self): return LuaString(f"{self.name}: 0x{id(self):x}")
 	def tonumber(self): return LuaNil()
 
-	def call(self):
+	def call(self, env, args):
 		raise LuaError(f"attempt to call a {self.name} value")
 
-	def get_from(self):
+	def get_from(self, key):
 		raise LuaError(f"attempt to index a {self.name} value")
 
 	def op_len(self) -> int:
@@ -75,7 +75,7 @@ class LuaObject:
 		right_type = type(other)
 		if LuaString not in [left_type, right_type]:
 			raise LuaError(f"attempt to concat a '{left_type.name}' with a '{right_type.name}'")
-		return LuaString(self.tostring() + other.tostring())
+		return LuaString(self.tostring().value + other.tostring().value)
 	
 	def __eq__(self, other): return self.value == other.value
 	def __ne__(self, other): return self.value != other.value
@@ -132,7 +132,11 @@ class LuaString(LuaObject):
 		self.value = str(value)
 
 	def tostring(self): return LuaString(self.value)
-	def tonumber(self): return LuaNumber(float(self.value))
+	def tonumber(self):
+		try:
+			return LuaNumber(float(self.value))
+		except ValueError:
+			return LuaNil()
 
 	def __str__(self): return self.value
 	def __repr__(self): return f"LuaString({self.value})"
