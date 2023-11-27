@@ -5,10 +5,9 @@ import struct
 
 
 class LuaFile:
-	def __init__(self, filename: str, env: LuaEnv = LuaEnv.get_default()):
-		with open(filename, "rb") as f:
-			self.contents = f.read()
-
+	def __init__(self, filename: str, contents: str, env: LuaEnv = LuaEnv.get_default()):
+		self.filename = filename
+		self.contents = contents
 		self.func_proto_num = 0
 		self.position = 0
 		self.env = env
