@@ -1,4 +1,5 @@
 from luafile import LuaFile
+import lvm
 
 import subprocess
 

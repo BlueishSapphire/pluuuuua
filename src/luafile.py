@@ -15,8 +15,9 @@ class LuaFile:
 		self.main_func = self.get_func()
 
 	def execute(self, args: list[LuaObject] = []):
+		from lvm import call_lua_function
 		try:
-			return self.main_func.call(self.env, args)
+			return call_lua_function(self.main_func, self.env, args)
 		except LuaError as err:
 			print("LuaError:", err)
 

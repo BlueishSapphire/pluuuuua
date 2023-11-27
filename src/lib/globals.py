@@ -1,4 +1,6 @@
 from lib.common import *
+from luatypes import *
+
 import subprocess
 import os.path
 
@@ -9,7 +11,6 @@ def lua_print(*args):
 def lua_error(*args):
 	optional_arg("error", args, 1)
 	optional_arg("error", args, 2)
-	from luatypes import LuaError
 	if len(args) == 0:
 		raise LuaError()
 	elif len(args) == 1:
@@ -21,7 +22,6 @@ def lua_assert(*args):
 	required_arg("assert", args, 1)
 	optional_arg("assert", args, 2)
 	if not args[0].bool():
-		from luatypes import LuaError
 		if len(args) > 1:
 			raise LuaError(args[1].value)
 		else:
@@ -42,7 +42,6 @@ def lua_tonumber(*args):
 def lua_next(*args):
 	required_arg("next", args, 1, "table")
 	required_arg("next", args, 2, "nil", "string", "number")
-	from luatypes import LuaNil
 	if isinstance(args[1], LuaNil):
 		idx = 1
 	else:
@@ -62,7 +61,6 @@ def lua_dofile(*args):
 	required_arg("dofile", args, 1, "string")
 	filename = args[0].value
 	if not os.path.exists(filename):
-		from luatypes import LuaError
 		raise LuaError(f"cannot open {filename}: No such file or directory")
 
 	proc = subprocess.Popen(args=["luac5.1", "-o", "/dev/stdout", filename], stdout=subprocess.PIPE)
@@ -83,7 +81,6 @@ def lua_require(*args):
 	# TODO don't reload already loaded files
 	required_arg("dofile", args, 1, "string")
 	if not os.path.exists(args[0]):
-		from luatypes import LuaError
 		raise LuaError(f"cannot open {args[0]}: No such file or directory")
 
 	proc = subprocess.Popen(args=["luac5.1", "-o", "/dev/stdout", args[0]], stdout=subprocess.PIPE)

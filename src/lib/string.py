@@ -1,4 +1,5 @@
 from lib.common import *
+from luatypes import *
 
 
 def byte(*args):
@@ -20,7 +21,6 @@ def find(*args):
 	required_arg("find", args, 2, "string")
 	idx = args[0].value.find(args[1].value)
 	if idx == -1:
-		from luatypes import LuaNil
 		return LuaNil()
 	return (idx, idx + len(args[1].value))
 

@@ -1,4 +1,6 @@
 from lib.common import *
+from luatypes import *
+
 import math
 from ctypes import CDLL
 libc = CDLL("libc.so.6")
@@ -100,14 +102,12 @@ def random(*args):
 	elif len(args) == 1:
 		u = args[0].value
 		if u <= 1:
-			from luatypes import LuaError
 			raise LuaError("interval is empty")
 		return math.floor(r * u) + 1
 	elif len(args) == 2:
 		l = args[0].value
 		u = args[1].value
 		if l >= u:
-			from luatypes import LuaError
 			raise LuaError("interval is empty")
 		return math.floor(r * (u - l + 1)) + l
 	else:

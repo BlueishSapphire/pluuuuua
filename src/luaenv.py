@@ -3,6 +3,8 @@ from lib.math import lua_mathlib
 from lib.string import lua_strlib
 from lib.table import lua_tablib
 
+from luatypes import *
+
 
 def lua_io_read(what: str | None = None) -> str:
 	res = input()
@@ -16,7 +18,6 @@ class LuaEnv:
 		self.globals = {}
 
 	def get(self, name):
-		from luatypes import LuaNil
 		return self.globals.get(name.value, LuaNil())
 
 	def set(self, name, val):
@@ -24,7 +25,6 @@ class LuaEnv:
 
 	def get_default():
 		# avoid circular import
-		from luatypes import LuaPyFunction, make_lua_type
 
 		env = LuaEnv()
 		env.globals = {}

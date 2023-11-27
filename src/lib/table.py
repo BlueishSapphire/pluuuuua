@@ -1,4 +1,5 @@
 from lib.common import *
+from luatypes import *
 
 
 def tab_insert(*args):
@@ -29,7 +30,6 @@ def tab_concat(*args):
 
 	for idx, value in enumerate(t.arr[i:j + 1]):
 		if value.name not in {"string", "number"}:
-			from luatypes import LuaError
 			raise LuaError(f"invalid value ({value.name}) at index {idx + 1} in table for 'concat'")
 
 	# print(i, j, t.arr)
@@ -61,14 +61,12 @@ def tab_foreachi(*args):
 
 
 def tab_setn(*args):
-	from luatypes import LuaError
 	raise LuaError("'setn' is obsolete")
 
 
 def tab_getn(*args):
 	required_arg("getn", args, 1, "table")
 	keys = args[0].keys()
-	from luatypes import LuaNumber
 	for i in range(1, len(keys) + 1):
 		if LuaNumber(i) not in keys:
 			break
