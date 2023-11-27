@@ -9,6 +9,7 @@ def _mathfunc(name, f):
 		required_arg(name, args, 1, "number")
 		return f(args[0].value)
 	
+	newf.__name__ = f.__name__
 	return newf
 
 

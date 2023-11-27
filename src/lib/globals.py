@@ -1,8 +1,10 @@
 from lib.common import *
+import subprocess
+import os.path
 
 
 def lua_print(*args):
-	print(*[a.tostring() for a in args], sep="\t")
+	print(*[a.tostring().value for a in args], sep="\t")
 
 def lua_error(*args):
 	optional_arg("error", args, 1)
@@ -11,16 +13,17 @@ def lua_error(*args):
 	if len(args) == 0:
 		raise LuaError()
 	elif len(args) == 1:
-		raise LuaError(args[0])
+		raise LuaError(args[0].value)
 	else:
-		raise LuaError(args[0])
+		raise LuaError(args[0].value)
 
 def lua_assert(*args):
 	required_arg("assert", args, 1)
 	optional_arg("assert", args, 2)
-	if args[0].op_not():
+	if not args[0].bool():
+		from luatypes import LuaError
 		if len(args) > 1:
-			raise LuaError(args[1])
+			raise LuaError(args[1].value)
 		else:
 			raise LuaError("assertion failed!")
 
@@ -55,6 +58,45 @@ def lua_ipairs(*args):
 	required_arg("ipairs", args, 1, "table")
 	return # TODO
 
+def lua_dofile(*args):
+	required_arg("dofile", args, 1, "string")
+	filename = args[0].value
+	if not os.path.exists(filename):
+		from luatypes import LuaError
+		raise LuaError(f"cannot open {filename}: No such file or directory")
+
+	proc = subprocess.Popen(args=["luac5.1", "-o", "/dev/stdout", filename], stdout=subprocess.PIPE)
+	bytecode = proc.stdout.read()
+	from luafile import LuaFile
+	luafile = LuaFile(filename, bytecode)
+	return luafile.execute()
+
+def lua_dostring(*args):
+	required_arg("dostring", args, 1, "string")
+	proc = subprocess.Popen(args=["luac5.1", "-o", "/dev/stdout", "-"], stdout=subprocess.PIPE, stdin=subprocess.PIPE)
+	bytecode = proc.communicate(input=args[0].value.encode())[0]
+	from luafile import LuaFile
+	luafile = LuaFile(":string", bytecode)
+	return luafile.execute()
+
+def lua_require(*args):
+	# TODO don't reload already loaded files
+	required_arg("dofile", args, 1, "string")
+	if not os.path.exists(args[0]):
+		from luatypes import LuaError
+		raise LuaError(f"cannot open {args[0]}: No such file or directory")
+
+	proc = subprocess.Popen(args=["luac5.1", "-o", "/dev/stdout", args[0]], stdout=subprocess.PIPE)
+	bytecode = proc.stdout.read()
+	luafile = LuaFile(args[0], bytecode)
+	return luafile.execute()
+
+def lua_setglobal(*args):
+	pass
+
+def lua_getglobal(*args):
+	pass
+
 lua_globals = {
 	"print": lua_print,
 	"error": lua_error,
@@ -65,4 +107,9 @@ lua_globals = {
 	"next": lua_next,
 	"pairs": lua_pairs,
 	"ipairs": lua_ipairs,
+	"dofile": lua_dofile,
+	"dostring": lua_dostring,
+	"require": lua_require,
+	"setglobal": lua_setglobal,
+	"getglobal": lua_getglobal,
 }

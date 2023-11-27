@@ -77,6 +77,9 @@ class LuaObject:
 		if LuaString not in [left_type, right_type]:
 			raise LuaError(f"attempt to concat a '{left_type.name}' with a '{right_type.name}'")
 		return LuaString(self.tostring().value + other.tostring().value)
+	
+	def bool(self) -> bool:
+		return True
 
 	def __eq__(self, other):
 		return type(self) == type(other) and self.value == other.value
@@ -106,6 +109,7 @@ class LuaNil(LuaObject):
 	def tonumber(self): return self
 
 	def op_not(self, other) -> any: return LuaBoolean(True)
+	def bool(self) -> bool: return False
 
 	def __str__(self): return "nil"
 	def __repr__(self): return "LuaNil"
@@ -146,9 +150,12 @@ class LuaString(LuaObject):
 			return LuaNumber(float(self.value))
 		except ValueError:
 			return LuaNil()
+	
+	def op_len(self):
+		return LuaNumber(len(self.value))
 
-	def __str__(self): return self.value
-	def __repr__(self): return f"LuaString({self.value})"
+	def __str__(self): return f'"{self.value}"'
+	def __repr__(self): return f'LuaString("{self.value}")'
 
 
 class LuaBoolean(LuaObject):
@@ -161,6 +168,8 @@ class LuaBoolean(LuaObject):
 
 	def tostring(self): return LuaString("true") if self.value else LuaString("false")
 	def tonumber(self): return LuaNil()
+
+	def bool(self) -> bool: return self.value
 
 	def __str__(self): return "true" if self.value else "false"
 	def __repr__(self): return f"LuaBoolean({self.value})"
@@ -176,11 +185,11 @@ class LuaTable(LuaObject):
 		self.arr = [LuaNil()] * arr_size
 		self.hash = {}
 
-	def get_from(self, key: str | int):
+	def get_from(self, key: LuaString | LuaNumber):
 		if key in self.hash.keys():
 			return self.hash[key]
-		elif isinstance(key, int) and 0 <= key < len(self.arr):
-			return self.arr[key]
+		elif isinstance(key, LuaNumber) and 0 <= key.value < len(self.arr):
+			return self.arr[int(key.value)]
 		else:
 			return LuaNil()
 
@@ -199,18 +208,39 @@ class LuaTable(LuaObject):
 		values.extend(self.hash.values())
 		return values
 
-	def set_hash(self, key: str, val: any):
+	def set_hash(self, key: LuaString, val: any):
 		self.hash.update({key: val})
 	
-	def set_arr(self, idx: int, val: any):
-		self.arr[idx - 1] = val
+	def set_arr(self, idx: LuaNumber, val: any):
+		if idx.value - 1 == len(self.arr):
+			self.arr.append(val)
+		else:
+			self.arr[int(idx.value - 1)] = val
+	
+	def set(self, key: LuaString | LuaNumber, val: any):
+		if isinstance(key, LuaString) or not key.value.is_integer():
+			self.set_hash(key, val)
+		else:
+			if key.value <= self.op_len().value + 1:
+				self.set_arr(key, val)
+			else:
+				self.set_hash(key, val)
 
 	def op_len(self):
 		keys = self.keys()
-		for i in range(1, len(keys) + 1):
-			if LuaNumber(i) not in keys:
+		arr_keys = list(sorted(k for k in keys if isinstance(k, LuaNumber)))
+		i = 0
+		for k in arr_keys:
+			if k.value < i: continue
+
+			if k.value == i + 1:
+				i += 1
+			else:
 				break
-		return LuaNumber(i - 1)
+		return LuaNumber(i)
+	
+	def __repr__(self):
+		return f"LuaTable({len(self.keys())})"
 
 
 class LuaFunction(LuaObject):
@@ -287,29 +317,33 @@ class LuaFunction(LuaObject):
 			res += f".const  {const}  ; {i}\n"
 		for i, upval in enumerate(self.upval_names):
 			res += f".upval  \"{upval}\"  ; {i}\n"
-		for i, func in enumerate(self.func_protos):
-			res += "\n"
-			res += "  " + "\n  ".join(func.get_debug_str().split("\n"))
-			res += "\n"
+		# for i, func in enumerate(self.func_protos):
+		# 	res += "\n"
+		# 	res += "  " + "\n  ".join(func.get_debug_str().split("\n"))
+		# 	res += "\n"
 		for i, inst in enumerate(self.instructs):
-			res += f"[{i + 1}] {inst.name:9} "
+			pc = f"[{i + 1}]"
+			res += f"{pc:>5s} {inst.name:9} "
 			match inst.kind:
 				case InstructKind.iA:
-					res += f"{inst.A:3d}"
+					res += f"{inst.A:3d}        "
 				case InstructKind.iAB:
-					res += f"{inst.A:3d} {inst.B:3d}"
+					res += f"{inst.A:3d} {inst.B:3d}    "
 				case InstructKind.iABC:
 					res += f"{inst.A:3d} {inst.B:3d} {inst.C:3d}"
 				case InstructKind.iABx:
-					res += f"{inst.A:3d} {inst.Bx:3d}"
+					res += f"{inst.A:3d} {inst.Bx:3d}    "
 				case InstructKind.iAC:
-					res += f"{inst.A:3d} {inst.C:3d}"
+					res += f"{inst.A:3d} {inst.C:3d}    "
 				case InstructKind.iAsBx:
-					res += f"{inst.A:3d} {inst.sBx:3d}"
+					res += f"{inst.A:3d} {inst.sBx:3d}    "
 				case InstructKind.isBx:
-					res += f"{inst.sBx:3d}"
+					res += f"{inst.sBx:3d}        "
 			res += "\n"
 		return res
+	
+	def __repr__(self):
+		return f"LuaFunction([{self.proto_num}], lines {self.first_line_num}:{self.last_line_num})"
 
 
 class LuaPyFunction(LuaObject):
@@ -343,12 +377,12 @@ def make_lua_type(val: any) -> tuple[LuaObject]:
 		case dict():
 			t = LuaTable(0, len(val))
 			for k, v in val.items():
-				t.set_hash(k, make_lua_type(v))
+				t.set(make_lua_type(k), make_lua_type(v))
 			return t
 		case list():
 			t = LuaTable(len(val), 0)
 			for i, v in enumerate(val):
-				t.set_arr(i + 1, make_lua_type(v))
+				t.set(LuaNumber(i + 1), make_lua_type(v))
 			return t
 		case f if callable(f):
 			return LuaPyFunction(f)
@@ -407,7 +441,7 @@ def not_none(l: list) -> list:
 	return list(filter(lambda a: a is not None, l))
 
 
-debug = False
+debug = True
 
 
 def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
@@ -418,15 +452,28 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 	const = lua_func.consts
 	upval = lua_func.upvals
 
+	if debug:
+		upval_names = lua_func.upval_names
+		local_names = lua_func.local_vars
+
 	def stack_or_const(val: int):
 		return const[val ^ 256] if val & 256 else stack[val]
+
+	if debug:
+		print(lua_func.get_debug_str())
 
 	while pc < len(lua_func.instructs):
 		inst = lua_func.instructs[pc]
 		A, B, C, Bx, sBx = inst.A, inst.B, inst.C, inst.Bx, inst.sBx
 
 		if debug:
-			print(f"-> {stack.registers}")
+			print("\x1b[3J\x1b[H", end="")
+			print(lua_func.get_debug_str())
+			registers = [v or LuaNil() for v in stack.registers]
+			for [name, _, _], val in zip(local_names, registers):
+				print(f"-> {name} = {repr(val)}")
+			extra_stack = registers[len(local_names):]
+			print(f"-> [{', '.join(repr(v) for v in extra_stack)}]")
 			input(f"{lua_func.proto_num}:[{pc + 1}] {inst.name}")
 
 		match inst.opcode:
@@ -446,18 +493,18 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 			case 0x05: # getglobal
 				stack[A] = env.get(const[Bx])
 			case 0x06: # gettable
-				stack[A] = stack[B].get_from(stack_or_const(C).value)
+				stack[A] = stack[B].get_from(stack_or_const(C))
 			case 0x07: # setglobal
 				env.set(const[Bx], stack[A])
 			case 0x08: # setupval
 				upval[B].set(stack[A])
 			case 0x09: # settable
-				stack[A].set_hash(stack_or_const(B), stack_or_const(C))
+				stack[A].set(stack_or_const(B), stack_or_const(C))
 			case 0x0A: # newtable
 				stack[A] = LuaTable(decode_fbyte(B), decode_fbyte(C))
 			case 0x0B: # self
 				stack[A + 1] = stack[B]
-				stack[A] = stack[B].get_from(stack_or_const(C).value)
+				stack[A] = stack[B].get_from(stack_or_const(C))
 			case 0x0C: # add
 				stack[A] = stack_or_const(B).op_add(stack_or_const(C))
 			case 0x0D: # sub
@@ -491,13 +538,13 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 				if (stack_or_const(B) <= stack_or_const(C)) != bool(A):
 					pc += 1
 			case 0x1A: # test
-				if bool(stack[B]) == bool(C):
+				if (stack[B] is not None and stack[B].bool()) != bool(C):
 					pc += 1
 			case 0x1B: # testset
-				if bool(stack[B]) == bool(C):
+				if (stack[B] is not None and stack[B].bool()) != bool(C):
 					pc += 1
 				else:
-					stack[A] = stack[B]
+					stack[A] = stack[B] or LuaNil()
 			case 0x1C: # call
 				if B == 1:
 					args = []
@@ -579,7 +626,7 @@ def call_lua_function(lua_func, env: LuaEnv, args: list[LuaObject]):
 					C = next_inst[0] << 24 | next_inst[1] << 16 | next_inst[2] << 8 | next_inst[3]
 
 				for i in range(1, B + 1):
-					stack[A].set_arr(
+					stack[A].set(
 						((C - 1) * LFIELDS_PER_FLUSH + i),
 						stack[A + i]
 					)

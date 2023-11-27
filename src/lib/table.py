@@ -6,38 +6,58 @@ def tab_insert(*args):
 	required_arg("insert", args, 2)
 	optional_arg("insert", args, 3)
 
+	t = args[0]
+
 	if len(args) == 2:
-		args[0].arr.append(args[1])
+		t.arr.append(args[1])
 	else:
-		args[0].set_hash(args[1], args[2])
+		i = int(args[1].value) - 1
+		v = args[2]
+		t.arr = t.arr[:i] + [v] + t.arr[i:]
 
 
 def tab_concat(*args):
 	required_arg("concat", args, 1, "table")
-	required_arg("concat", args, 2, "string")
-	required_arg("concat", args, 3, "number")
-	required_arg("concat", args, 4, "number")
-	# table, sep, i, j
+	optional_arg("concat", args, 2, "string")
+	optional_arg("concat", args, 3, "number")
+	optional_arg("concat", args, 4, "number")
+	
+	t = args[0]
+	sep = args[1] if len(args) > 1 else ""
+	i = (args[2] - 1) if len(args) > 2 else 0
+	j = args[3] if len(args) > 3 else len(t.arr)
+
+	for idx, value in enumerate(t.arr[i:j + 1]):
+		if value.name not in {"string", "number"}:
+			from luatypes import LuaError
+			raise LuaError(f"invalid value ({value.name}) at index {idx + 1} in table for 'concat'")
+
+	# print(i, j, t.arr)
+	return sep.join([e.tostring().value for e in t.arr[i:j]])
 
 
 def tab_sort(*args):
 	required_arg("sort", args, 1, "table")
 	optional_arg("sort", args, 2, "function")
+	# TODO
 
 
 def tab_remove(*args):
 	required_arg("remove", args, 1, "table")
 	optional_arg("remove", args, 2, "string", "number")
+	# TODO
 
 
 def tab_foreach(*args):
 	required_arg("foreach", args, 1, "table")
 	required_arg("foreach", args, 2, "function")
+	# TODO
 
 
 def tab_foreachi(*args):
 	required_arg("foreachi", args, 1, "table")
 	required_arg("foreachi", args, 2, "function")
+	# TODO
 
 
 def tab_setn(*args):
