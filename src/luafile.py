@@ -61,7 +61,7 @@ class LuaFile:
 		kind = self.get_byte()
 		match kind:
 			case 0: val = LuaNil()
-			case 1: val = LuaBool(self.get_bool())
+			case 1: val = LuaBoolean(self.get_bool())
 			case 3: val = LuaNumber(self.get_number())
 			case 4: val = LuaString(self.get_str())
 		return val
