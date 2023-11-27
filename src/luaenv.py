@@ -1,6 +1,7 @@
 from lib.globals import lua_globals
 from lib.math import lua_mathlib
 from lib.string import lua_strlib
+from lib.table import lua_tablib
 
 
 def lua_io_read(what: str | None = None) -> str:
@@ -30,4 +31,5 @@ class LuaEnv:
 		env.globals.update({k: make_lua_type(v) for k, v in lua_globals.items()})
 		env.globals.update({ "math": make_lua_type(lua_mathlib) })
 		env.globals.update({ "string": make_lua_type(lua_strlib) })
+		env.globals.update({ "table": make_lua_type(lua_tablib) })
 		return env

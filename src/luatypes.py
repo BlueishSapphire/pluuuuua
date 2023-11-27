@@ -38,6 +38,7 @@ class LuaObject:
 	def op_len(self) -> int:
 		if type(self) in NO_LENGTH:
 			raise LuaError(f"attempt to get length of a {self.name} value")
+		return LuaNil()
 
 	def op_add(self, other) -> any:
 		maybe_attempt_op("add", self, other)
@@ -204,7 +205,12 @@ class LuaTable(LuaObject):
 	def set_arr(self, idx: int, val: any):
 		self.arr[idx - 1] = val
 
-	def op_len(self): return len(self.arr) # TODO
+	def op_len(self):
+		keys = self.keys()
+		for i in range(1, len(keys) + 1):
+			if LuaNumber(i) not in keys:
+				break
+		return LuaNumber(i - 1)
 
 
 class LuaFunction(LuaObject):
